@@ -130,8 +130,6 @@ async function sendWarning(
   if (connection) {
     await playBeep(connection, frequency, 2);
     await speakText(connection, `${label} remaining`);
-  } else {
-    await channel.send({ content: `${label} remaining on your APWH exam!`, tts: true });
   }
 }
 
@@ -147,7 +145,7 @@ async function runTimer(
     .setColor(0x5865f2)
     .setTitle('📝 APWH Exam Timer Started')
     .setDescription(
-      'Your **55-minute** exam timer has begun!\n\nYou will receive warnings at:\n• 20 minutes remaining\n• 10 minutes remaining\n• 5 minutes remaining',
+      'Your **55-minute** exam timer has begun!\n\nYou will receive audio warnings at:\n• 20 minutes remaining\n• 10 minutes remaining\n• 5 minutes remaining',
     )
     .setTimestamp();
 
@@ -155,8 +153,6 @@ async function runTimer(
 
   if (connection) {
     await speakText(connection, '55 minute timer starts now');
-  } else {
-    await channel.send({ content: '55 minute timer starts now', tts: true });
   }
 
   const checkInterval = setInterval(async () => {
@@ -179,8 +175,6 @@ async function runTimer(
           try { connection.destroy(); } catch { /* ignore */ }
           client.user?.setActivity(undefined);
         }, 4000);
-      } else {
-        await channel.send({ content: 'Time is up! Pencils down!', tts: true });
       }
       return;
     }
@@ -263,12 +257,11 @@ client.on('interactionCreate', async (interaction) => {
 
     try {
       await interaction.editReply(
-        `⚠️ Could not join **${voiceChannel.name}** (voice may be unavailable in this environment).\n` +
-        `Running timer in **text-only mode** — you'll receive warnings here instead.`,
+        `❌ Could not connect to **${voiceChannel.name}** for audio.\n` +
+        `Make sure the bot has **Connect** and **Speak** permissions in that channel.`,
       );
-      await runTimer(interaction, null);
     } catch (e) {
-      console.error('Failed to send fallback reply:', e);
+      console.error('Failed to send error reply:', e);
     }
   }
 });
