@@ -33,7 +33,7 @@ const EXAM_DURATION_MS = 55 * 60 * 1000;
 const WARNINGS: { remainingMs: number; label: string; color: number }[] = [
   { remainingMs: 20 * 60 * 1000, label: '20 minutes', color: 0xf59e0b },
   { remainingMs: 10 * 60 * 1000, label: '10 minutes', color: 0xf97316 },
-  { remainingMs: 5 * 60 * 1000, label: '5 minutes', color: 0xef4444 },
+  { remainingMs: 5 * 60 * 1000,  label: '5 minutes',  color: 0xef4444 },
 ];
 
 const client = new Client({
@@ -49,75 +49,72 @@ const command = new SlashCommandBuilder()
 
 async function speakText(connection: VoiceConnection, text: string): Promise<void> {
   return new Promise((resolve) => {
-    if (!ffmpegPath) {
+    if (!ffmpegPath) { resolve(); return; }
+
+    try {
+      const espeak = spawn('espeak-ng', [text, '--stdout', '-s', '140', '-p', '50']);
+      const ffmpeg = spawn(ffmpegPath, [
+        '-f', 's16le', '-ar', '22050', '-ac', '1', '-i', 'pipe:0',
+        '-ar', '48000', '-ac', '2', '-f', 's16le', 'pipe:1',
+      ]);
+
+      espeak.stdout.pipe(ffmpeg.stdin);
+      espeak.on('error', (e) => { console.error('espeak error:', e); resolve(); });
+      ffmpeg.on('error', (e) => { console.error('ffmpeg error:', e); resolve(); });
+
+      const player = createAudioPlayer();
+      const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
+
+      player.on('error', () => resolve());
+      player.once(AudioPlayerStatus.Idle, () => resolve());
+
+      connection.subscribe(player);
+      player.play(resource);
+
+      setTimeout(() => { try { player.stop(true); } catch { /* ignore */ } resolve(); }, 12000);
+    } catch (e) {
+      console.error('speakText error:', e);
       resolve();
-      return;
     }
-
-    const espeak = spawn('espeak-ng', [text, '--stdout', '-s', '140', '-p', '50']);
-    const ffmpeg = spawn(ffmpegPath, [
-      '-f', 's16le', '-ar', '22050', '-ac', '1', '-i', 'pipe:0',
-      '-ar', '48000', '-ac', '2', '-f', 's16le', 'pipe:1',
-    ]);
-
-    espeak.stdout.pipe(ffmpeg.stdin);
-    espeak.on('error', () => resolve());
-
-    const player = createAudioPlayer();
-    const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
-
-    connection.subscribe(player);
-    player.play(resource);
-
-    player.once(AudioPlayerStatus.Idle, () => resolve());
-    player.once('error', () => resolve());
-
-    setTimeout(() => {
-      player.stop(true);
-      resolve();
-    }, 12000);
   });
 }
 
 async function playBeep(connection: VoiceConnection, frequency = 880, durationSec = 2): Promise<void> {
   return new Promise((resolve) => {
-    if (!ffmpegPath) {
-      console.error('ffmpeg-static not found, skipping audio');
+    if (!ffmpegPath) { resolve(); return; }
+
+    try {
+      const ffmpeg = spawn(ffmpegPath, [
+        '-f', 'lavfi',
+        '-i', `sine=frequency=${frequency}:duration=${durationSec}`,
+        '-ar', '48000', '-ac', '2', '-f', 's16le', 'pipe:1',
+      ]);
+
+      ffmpeg.on('error', (e) => { console.error('ffmpeg beep error:', e); resolve(); });
+
+      const player = createAudioPlayer();
+      const resource = createAudioResource(ffmpeg.stdout, {
+        inputType: StreamType.Raw,
+        metadata: { title: 'beep' },
+      });
+
+      player.on('error', () => resolve());
+      player.once(AudioPlayerStatus.Idle, () => resolve());
+
+      connection.subscribe(player);
+      player.play(resource);
+
+      setTimeout(() => { try { player.stop(true); } catch { /* ignore */ } resolve(); }, (durationSec + 2) * 1000);
+    } catch (e) {
+      console.error('playBeep error:', e);
       resolve();
-      return;
     }
-
-    const ffmpeg = spawn(ffmpegPath, [
-      '-f', 'lavfi',
-      '-i', `sine=frequency=${frequency}:duration=${durationSec}`,
-      '-ar', '48000',
-      '-ac', '2',
-      '-f', 's16le',
-      'pipe:1',
-    ]);
-
-    const player = createAudioPlayer();
-    const resource = createAudioResource(ffmpeg.stdout, {
-      inputType: StreamType.Raw,
-      metadata: { title: 'beep' },
-    });
-
-    connection.subscribe(player);
-    player.play(resource);
-
-    player.once(AudioPlayerStatus.Idle, () => resolve());
-    player.once('error', () => resolve());
-
-    setTimeout(() => {
-      player.stop(true);
-      resolve();
-    }, (durationSec + 1) * 1000);
   });
 }
 
 async function sendWarning(
   channel: TextChannel,
-  connection: VoiceConnection,
+  connection: VoiceConnection | null,
   label: string,
   color: number,
   frequency: number,
@@ -129,33 +126,38 @@ async function sendWarning(
     .setTimestamp();
 
   await channel.send({ embeds: [embed] });
-  await playBeep(connection, frequency, 2);
-  await speakText(connection, `${label} remaining`);
+
+  if (connection) {
+    await playBeep(connection, frequency, 2);
+    await speakText(connection, `${label} remaining`);
+  }
 }
 
-async function runExamTimer(
+async function runTimer(
   interaction: ChatInputCommandInteraction,
-  connection: VoiceConnection,
+  connection: VoiceConnection | null,
 ): Promise<void> {
   const channel = interaction.channel as TextChannel;
-  const startTime = Date.now();
-  const endTime = startTime + EXAM_DURATION_MS;
-
+  const endTime = Date.now() + EXAM_DURATION_MS;
   const warningsLeft = [...WARNINGS].sort((a, b) => b.remainingMs - a.remainingMs);
 
-  const embed = new EmbedBuilder()
+  const startEmbed = new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('📝 APWH Exam Timer Started')
-    .setDescription('Your **55-minute** exam timer has begun!\n\nYou will receive audio warnings at:\n• 20 minutes remaining\n• 10 minutes remaining\n• 5 minutes remaining')
+    .setDescription(
+      'Your **55-minute** exam timer has begun!\n\nYou will receive warnings at:\n• 20 minutes remaining\n• 10 minutes remaining\n• 5 minutes remaining' +
+      (connection ? '' : '\n\n⚠️ *Voice unavailable — warnings will be sent here as text.*'),
+    )
     .setTimestamp();
 
-  await channel.send({ embeds: [embed] });
+  await channel.send({ embeds: [startEmbed] });
 
-  await speakText(connection, '55 minute timer starts now');
+  if (connection) {
+    await speakText(connection, '55 minute timer starts now');
+  }
 
   const checkInterval = setInterval(async () => {
-    const now = Date.now();
-    const remaining = endTime - now;
+    const remaining = endTime - Date.now();
 
     if (remaining <= 0) {
       clearInterval(checkInterval);
@@ -167,21 +169,23 @@ async function runExamTimer(
         .setTimestamp();
 
       await channel.send({ embeds: [doneEmbed] });
-      await playBeep(connection, 392, 3);
 
-      setTimeout(() => {
-        connection.destroy();
-        client.user?.setActivity(undefined);
-      }, 3000);
+      if (connection) {
+        await playBeep(connection, 392, 3);
+        setTimeout(() => {
+          try { connection.destroy(); } catch { /* ignore */ }
+          client.user?.setActivity(undefined);
+        }, 4000);
+      }
       return;
     }
 
     const nextWarning = warningsLeft[0];
     if (nextWarning && remaining <= nextWarning.remainingMs) {
       warningsLeft.shift();
-      const freq = nextWarning.remainingMs === 20 * 60 * 1000 ? 660
-        : nextWarning.remainingMs === 10 * 60 * 1000 ? 770
-        : 880;
+      const freq =
+        nextWarning.remainingMs === 20 * 60 * 1000 ? 660 :
+        nextWarning.remainingMs === 10 * 60 * 1000 ? 770 : 880;
       await sendWarning(channel, connection, nextWarning.label, nextWarning.color, freq);
     }
   }, 5000);
@@ -189,17 +193,14 @@ async function runExamTimer(
 
 client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user?.tag}`);
-
   client.user?.setActivity('APWH Exam Timer', { type: ActivityType.Watching });
 
   const rest = new REST({ version: '10' }).setToken(token!);
   try {
-    await rest.put(
-      Routes.applicationCommands(client.application!.id),
-      { body: [command.toJSON()] },
-    );
-    console.log('Slash command /apwh-exam registered globally');
-    console.log('Note: Global commands may take up to 1 hour to appear in servers.');
+    await rest.put(Routes.applicationCommands(client.application!.id), {
+      body: [command.toJSON()],
+    });
+    console.log('Slash command /apwh-exam registered globally (may take up to 1 hour to appear)');
   } catch (err) {
     console.error('Failed to register commands:', err);
   }
@@ -213,34 +214,51 @@ client.on('interactionCreate', async (interaction) => {
   const voiceChannel = member?.voice?.channel;
 
   if (!voiceChannel) {
-    await interaction.reply({
-      content: '❌ You need to be in a voice channel first!',
-      ephemeral: true,
-    });
+    await interaction.reply({ content: '❌ You need to be in a voice channel first!', ephemeral: true });
     return;
   }
 
   await interaction.deferReply();
 
+  let connection: VoiceConnection | null = null;
+
   try {
-    const connection = joinVoiceChannel({
+    connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: interaction.guildId!,
       adapterCreator: interaction.guild!.voiceAdapterCreator,
     });
 
-    await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
-
-    await interaction.editReply(`✅ Joined **${voiceChannel.name}** and starting your 55-minute exam timer!`);
-
-    connection.on(VoiceConnectionStatus.Disconnected, () => {
-      try { connection.destroy(); } catch { /* ignore */ }
+    connection.on('error', (err) => {
+      console.error('Voice connection error (non-fatal):', err.message);
     });
 
-    await runExamTimer(interaction, connection);
+    await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+
+    connection.on(VoiceConnectionStatus.Disconnected, () => {
+      try { connection?.destroy(); } catch { /* ignore */ }
+    });
+
+    await interaction.editReply(`✅ Joined **${voiceChannel.name}** — starting your 55-minute APWH exam timer!`);
+    await runTimer(interaction, connection);
+
   } catch (err) {
-    console.error('Error starting exam timer:', err);
-    await interaction.editReply('❌ Failed to join voice channel or start timer. Make sure I have the correct permissions!');
+    console.error('Voice connection failed, falling back to text-only mode:', (err as Error).message);
+
+    if (connection) {
+      try { connection.destroy(); } catch { /* ignore */ }
+      connection = null;
+    }
+
+    try {
+      await interaction.editReply(
+        `⚠️ Could not join **${voiceChannel.name}** (voice may be unavailable in this environment).\n` +
+        `Running timer in **text-only mode** — you'll receive warnings here instead.`,
+      );
+      await runTimer(interaction, null);
+    } catch (e) {
+      console.error('Failed to send fallback reply:', e);
+    }
   }
 });
 
