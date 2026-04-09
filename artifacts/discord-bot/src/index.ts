@@ -44,8 +44,8 @@ const client = new Client({
 });
 
 const command = new SlashCommandBuilder()
-  .setName('examtimer')
-  .setDescription('Join your voice channel and start a 55-minute APWH exam timer with audio warnings');
+  .setName('apwh-mcq')
+  .setDescription('Join your voice channel and start a 55-minute APWH MCQ exam timer with audio warnings');
 
 async function speakText(connection: VoiceConnection, text: string): Promise<void> {
   return new Promise((resolve) => {
@@ -198,12 +198,19 @@ client.once('clientReady', async (c) => {
   const rest = new REST({ version: '10' }).setToken(token!);
   const appId = c.application.id;
 
+  try {
+    await rest.put(Routes.applicationCommands(appId), { body: [] });
+    console.log('✅ Cleared all global commands (removed old /apwh-exam, /examtimer)');
+  } catch (err) {
+    console.error('Failed to clear global commands:', err);
+  }
+
   for (const guild of c.guilds.cache.values()) {
     try {
       await rest.put(Routes.applicationGuildCommands(appId, guild.id), {
         body: [command.toJSON()],
       });
-      console.log(`✅ /examtimer registered in guild: ${guild.name} (${guild.id})`);
+      console.log(`✅ /apwh-mcq registered in guild: ${guild.name} (${guild.id})`);
     } catch (err) {
       console.error(`Failed to register command in guild ${guild.name}:`, err);
     }
@@ -213,7 +220,7 @@ client.once('clientReady', async (c) => {
 client.on('interactionCreate', async (interaction) => {
   console.log(`Interaction received: ${interaction.type} — ${interaction.isChatInputCommand() ? interaction.commandName : 'non-command'}`);
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'examtimer') return;
+  if (interaction.commandName !== 'apwh-mcq') return;
 
   const member = interaction.member as GuildMember;
   const voiceChannel = member?.voice?.channel;
