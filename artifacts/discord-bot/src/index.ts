@@ -44,7 +44,7 @@ const client = new Client({
 });
 
 const command = new SlashCommandBuilder()
-  .setName('apwh-exam')
+  .setName('examtimer')
   .setDescription('Join your voice channel and start a 55-minute APWH exam timer with audio warnings');
 
 async function speakText(connection: VoiceConnection, text: string): Promise<void> {
@@ -191,24 +191,30 @@ async function runTimer(
   }, 5000);
 }
 
-client.once('clientReady', async () => {
-  console.log(`Logged in as ${client.user?.tag}`);
-  client.user?.setActivity('APWH Exam Timer', { type: ActivityType.Watching });
+client.once('clientReady', async (c) => {
+  console.log(`Logged in as ${c.user.tag}`);
+  console.log(`Bot is in ${c.guilds.cache.size} server(s)`);
+  c.user.setActivity('APWH Exam Timer', { type: ActivityType.Watching });
 
   const rest = new REST({ version: '10' }).setToken(token!);
-  try {
-    await rest.put(Routes.applicationCommands(client.application!.id), {
-      body: [command.toJSON()],
-    });
-    console.log('Slash command /apwh-exam registered globally (may take up to 1 hour to appear)');
-  } catch (err) {
-    console.error('Failed to register commands:', err);
+  const appId = c.application.id;
+
+  for (const guild of c.guilds.cache.values()) {
+    try {
+      await rest.put(Routes.applicationGuildCommands(appId, guild.id), {
+        body: [command.toJSON()],
+      });
+      console.log(`✅ /examtimer registered in guild: ${guild.name} (${guild.id})`);
+    } catch (err) {
+      console.error(`Failed to register command in guild ${guild.name}:`, err);
+    }
   }
 });
 
 client.on('interactionCreate', async (interaction) => {
+  console.log(`Interaction received: ${interaction.type} — ${interaction.isChatInputCommand() ? interaction.commandName : 'non-command'}`);
   if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== 'apwh-exam') return;
+  if (interaction.commandName !== 'examtimer') return;
 
   const member = interaction.member as GuildMember;
   const voiceChannel = member?.voice?.channel;
