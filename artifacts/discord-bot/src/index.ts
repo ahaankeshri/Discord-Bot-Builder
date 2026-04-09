@@ -130,6 +130,7 @@ async function sendWarning(
 
   await channel.send({ embeds: [embed] });
   await playBeep(connection, frequency, 2);
+  await speakText(connection, `${label} remaining`);
 }
 
 async function runExamTimer(
