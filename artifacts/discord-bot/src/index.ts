@@ -47,6 +47,38 @@ const command = new SlashCommandBuilder()
   .setName('apwh-exam')
   .setDescription('Join your voice channel and start a 55-minute APWH exam timer with audio warnings');
 
+async function speakText(connection: VoiceConnection, text: string): Promise<void> {
+  return new Promise((resolve) => {
+    if (!ffmpegPath) {
+      resolve();
+      return;
+    }
+
+    const espeak = spawn('espeak-ng', [text, '--stdout', '-s', '140', '-p', '50']);
+    const ffmpeg = spawn(ffmpegPath, [
+      '-f', 's16le', '-ar', '22050', '-ac', '1', '-i', 'pipe:0',
+      '-ar', '48000', '-ac', '2', '-f', 's16le', 'pipe:1',
+    ]);
+
+    espeak.stdout.pipe(ffmpeg.stdin);
+    espeak.on('error', () => resolve());
+
+    const player = createAudioPlayer();
+    const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
+
+    connection.subscribe(player);
+    player.play(resource);
+
+    player.once(AudioPlayerStatus.Idle, () => resolve());
+    player.once('error', () => resolve());
+
+    setTimeout(() => {
+      player.stop(true);
+      resolve();
+    }, 12000);
+  });
+}
+
 async function playBeep(connection: VoiceConnection, frequency = 880, durationSec = 2): Promise<void> {
   return new Promise((resolve) => {
     if (!ffmpegPath) {
@@ -118,7 +150,7 @@ async function runExamTimer(
 
   await channel.send({ embeds: [embed] });
 
-  await playBeep(connection, 523, 1);
+  await speakText(connection, '55 minute timer starts now');
 
   const checkInterval = setInterval(async () => {
     const now = Date.now();
