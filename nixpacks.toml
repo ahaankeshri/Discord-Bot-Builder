@@ -1,5 +1,6 @@
 [phases.setup]
 nixPkgs = ["espeak-ng", "ffmpeg"]
+cmds = ["npm install -g pnpm"]
 
 [phases.install]
 cmds = ["pnpm install --no-frozen-lockfile"]
