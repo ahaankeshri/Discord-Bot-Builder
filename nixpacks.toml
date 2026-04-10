@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["espeak-ng", "ffmpeg"]
+
+[phases.install]
+cmds = ["pnpm install --no-frozen-lockfile"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "pnpm --filter @workspace/discord-bot run dev"
