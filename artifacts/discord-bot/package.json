@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx src/index.ts",
+    "build": "tsc --noEmit false --outDir dist",
+    "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
