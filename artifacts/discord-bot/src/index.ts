@@ -65,6 +65,19 @@ const SAQ_CONFIG: ExamConfig = {
   ],
 };
 
+const LAQ_CONFIG: ExamConfig = {
+  examName: 'APWH LAQ',
+  durationMs: 100 * 60 * 1000,
+  startMessage: '1 hour 40 minute timer starts now',
+  warnings: [
+    { remainingMs: 60 * 60 * 1000, label: '60 minutes', color: 0x3b82f6, beepFreq: 550 },
+    { remainingMs: 40 * 60 * 1000, label: '40 minutes', color: 0xf59e0b, beepFreq: 660 },
+    { remainingMs: 20 * 60 * 1000, label: '20 minutes', color: 0xf97316, beepFreq: 770 },
+    { remainingMs: 10 * 60 * 1000, label: '10 minutes', color: 0xef4444, beepFreq: 880 },
+    { remainingMs:  2 * 60 * 1000, label: '2 minutes',  color: 0xb91c1c, beepFreq: 980 },
+  ],
+};
+
 interface ActiveSession {
   interval: ReturnType<typeof setInterval>;
   connection: VoiceConnection | null;
@@ -87,6 +100,10 @@ const apwhMcqCommand = new SlashCommandBuilder()
 const apwhSaqCommand = new SlashCommandBuilder()
   .setName('apwh-saq')
   .setDescription('Start a 40-minute APWH SAQ exam timer with audio warnings at 20, 10, and 2 minutes');
+
+const apwhLaqCommand = new SlashCommandBuilder()
+  .setName('apwh-laq')
+  .setDescription('Start a 1hr 40min APWH LAQ exam timer with audio warnings at 60, 40, 20, 10, and 2 minutes');
 
 const examCancelCommand = new SlashCommandBuilder()
   .setName('exam-cancel')
@@ -339,6 +356,7 @@ client.once('clientReady', async (c) => {
   const commands = [
     apwhMcqCommand.toJSON(),
     apwhSaqCommand.toJSON(),
+    apwhLaqCommand.toJSON(),
     examCancelCommand.toJSON(),
   ];
 
@@ -384,6 +402,11 @@ client.on('interactionCreate', async (interaction) => {
 
   if (interaction.commandName === 'apwh-saq') {
     await handleExamCommand(interaction, SAQ_CONFIG);
+    return;
+  }
+
+  if (interaction.commandName === 'apwh-laq') {
+    await handleExamCommand(interaction, LAQ_CONFIG);
     return;
   }
 });
