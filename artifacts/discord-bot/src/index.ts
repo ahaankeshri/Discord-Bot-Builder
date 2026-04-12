@@ -29,12 +29,41 @@ if (!token) {
   process.exit(1);
 }
 
-const EXAM_DURATION_MS = 55 * 60 * 1000;
-const WARNINGS: { remainingMs: number; label: string; color: number }[] = [
-  { remainingMs: 20 * 60 * 1000, label: '20 minutes', color: 0xf59e0b },
-  { remainingMs: 10 * 60 * 1000, label: '10 minutes', color: 0xf97316 },
-  { remainingMs: 5 * 60 * 1000,  label: '5 minutes',  color: 0xef4444 },
-];
+interface Warning {
+  remainingMs: number;
+  label: string;
+  color: number;
+  beepFreq: number;
+}
+
+interface ExamConfig {
+  examName: string;
+  durationMs: number;
+  startMessage: string;
+  warnings: Warning[];
+}
+
+const MCQ_CONFIG: ExamConfig = {
+  examName: 'APWH MCQ',
+  durationMs: 55 * 60 * 1000,
+  startMessage: '55 minute timer starts now',
+  warnings: [
+    { remainingMs: 20 * 60 * 1000, label: '20 minutes', color: 0xf59e0b, beepFreq: 660 },
+    { remainingMs: 10 * 60 * 1000, label: '10 minutes', color: 0xf97316, beepFreq: 770 },
+    { remainingMs:  5 * 60 * 1000, label: '5 minutes',  color: 0xef4444, beepFreq: 880 },
+  ],
+};
+
+const SAQ_CONFIG: ExamConfig = {
+  examName: 'APWH SAQ',
+  durationMs: 40 * 60 * 1000,
+  startMessage: '40 minute timer starts now',
+  warnings: [
+    { remainingMs: 20 * 60 * 1000, label: '20 minutes', color: 0xf59e0b, beepFreq: 660 },
+    { remainingMs: 10 * 60 * 1000, label: '10 minutes', color: 0xf97316, beepFreq: 770 },
+    { remainingMs:  2 * 60 * 1000, label: '2 minutes',  color: 0xef4444, beepFreq: 880 },
+  ],
+};
 
 interface ActiveSession {
   interval: ReturnType<typeof setInterval>;
@@ -53,7 +82,11 @@ const client = new Client({
 
 const apwhMcqCommand = new SlashCommandBuilder()
   .setName('apwh-mcq')
-  .setDescription('Join your voice channel and start a 55-minute APWH MCQ exam timer with audio warnings');
+  .setDescription('Start a 55-minute APWH MCQ exam timer with audio warnings at 20, 10, and 5 minutes');
+
+const apwhSaqCommand = new SlashCommandBuilder()
+  .setName('apwh-saq')
+  .setDescription('Start a 40-minute APWH SAQ exam timer with audio warnings at 20, 10, and 2 minutes');
 
 const examCancelCommand = new SlashCommandBuilder()
   .setName('exam-cancel')
@@ -127,21 +160,19 @@ async function playBeep(connection: VoiceConnection, frequency = 880, durationSe
 async function sendWarning(
   channel: TextChannel,
   connection: VoiceConnection | null,
-  label: string,
-  color: number,
-  frequency: number,
+  warning: Warning,
 ): Promise<void> {
   const embed = new EmbedBuilder()
-    .setColor(color)
+    .setColor(warning.color)
     .setTitle('⏰ Exam Timer Warning')
-    .setDescription(`**${label} remaining** on your APWH exam!`)
+    .setDescription(`**${warning.label} remaining** on your exam!`)
     .setTimestamp();
 
   await channel.send({ embeds: [embed] });
 
   if (connection) {
-    await playBeep(connection, frequency, 2);
-    await speakText(connection, `${label} remaining`);
+    await playBeep(connection, warning.beepFreq, 2);
+    await speakText(connection, `${warning.label} remaining`);
   }
 }
 
@@ -159,25 +190,32 @@ function endSession(guildId: string): void {
 async function runTimer(
   interaction: ChatInputCommandInteraction,
   connection: VoiceConnection | null,
-  examName: string,
+  config: ExamConfig,
 ): Promise<void> {
   const guildId = interaction.guildId!;
   const channel = interaction.channel as TextChannel;
-  const endTime = Date.now() + EXAM_DURATION_MS;
-  const warningsLeft = [...WARNINGS].sort((a, b) => b.remainingMs - a.remainingMs);
+  const endTime = Date.now() + config.durationMs;
+  const totalMinutes = Math.round(config.durationMs / 60000);
+  const warningsLeft = [...config.warnings].sort((a, b) => b.remainingMs - a.remainingMs);
+
+  const warningBullets = config.warnings
+    .slice()
+    .sort((a, b) => b.remainingMs - a.remainingMs)
+    .map(w => `• ${w.label} remaining`)
+    .join('\n');
 
   const startEmbed = new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle('📝 APWH Exam Timer Started')
+    .setTitle(`📝 ${config.examName} Timer Started`)
     .setDescription(
-      'Your **55-minute** exam timer has begun!\n\nYou will receive audio warnings at:\n• 20 minutes remaining\n• 10 minutes remaining\n• 5 minutes remaining\n\nRun `/exam-cancel` to stop the timer early.',
+      `Your **${totalMinutes}-minute** exam timer has begun!\n\nYou will receive audio warnings at:\n${warningBullets}\n\nRun \`/exam-cancel\` to stop the timer early.`,
     )
     .setTimestamp();
 
   await channel.send({ embeds: [startEmbed] });
 
   if (connection) {
-    await speakText(connection, '55 minute timer starts now');
+    await speakText(connection, config.startMessage);
   }
 
   const checkInterval = setInterval(async () => {
@@ -190,7 +228,7 @@ async function runTimer(
       const doneEmbed = new EmbedBuilder()
         .setColor(0x57f287)
         .setTitle('✅ Time is Up!')
-        .setDescription('Your **55-minute** APWH exam timer has ended. Pencils down!')
+        .setDescription(`Your **${totalMinutes}-minute** ${config.examName} timer has ended. Pencils down!`)
         .setTimestamp();
 
       await channel.send({ embeds: [doneEmbed] });
@@ -208,14 +246,79 @@ async function runTimer(
     const nextWarning = warningsLeft[0];
     if (nextWarning && remaining <= nextWarning.remainingMs) {
       warningsLeft.shift();
-      const freq =
-        nextWarning.remainingMs === 20 * 60 * 1000 ? 660 :
-        nextWarning.remainingMs === 10 * 60 * 1000 ? 770 : 880;
-      await sendWarning(channel, connection, nextWarning.label, nextWarning.color, freq);
+      await sendWarning(channel, connection, nextWarning);
     }
   }, 5000);
 
-  activeSessions.set(guildId, { interval: checkInterval, connection, examName });
+  activeSessions.set(guildId, { interval: checkInterval, connection, examName: config.examName });
+}
+
+async function handleExamCommand(
+  interaction: ChatInputCommandInteraction,
+  config: ExamConfig,
+): Promise<void> {
+  const guildId = interaction.guildId!;
+
+  if (activeSessions.has(guildId)) {
+    await interaction.reply({
+      content: '❌ An exam timer is already running! Use `/exam-cancel` to stop it first.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const member = interaction.member as GuildMember;
+  const voiceChannel = member?.voice?.channel;
+
+  if (!voiceChannel) {
+    await interaction.reply({ content: '❌ You need to be in a voice channel first!', ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  let connection: VoiceConnection | null = null;
+
+  try {
+    connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: guildId,
+      adapterCreator: interaction.guild!.voiceAdapterCreator,
+    });
+
+    connection.on('error', (err) => {
+      console.error('Voice connection error (non-fatal):', err.message);
+    });
+
+    await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+
+    connection.on(VoiceConnectionStatus.Disconnected, () => {
+      endSession(guildId);
+    });
+
+    const totalMinutes = Math.round(config.durationMs / 60000);
+    await interaction.editReply(
+      `✅ Joined **${voiceChannel.name}** — starting your ${totalMinutes}-minute ${config.examName} timer!`,
+    );
+    await runTimer(interaction, connection, config);
+
+  } catch (err) {
+    console.error('Voice connection failed, falling back to text-only mode:', (err as Error).message);
+
+    if (connection) {
+      try { connection.destroy(); } catch { /* ignore */ }
+      connection = null;
+    }
+
+    try {
+      await interaction.editReply(
+        `❌ Could not connect to **${voiceChannel.name}** for audio.\n` +
+        `Make sure the bot has **Connect** and **Speak** permissions in that channel.`,
+      );
+    } catch (e) {
+      console.error('Failed to send error reply:', e);
+    }
+  }
 }
 
 client.once('clientReady', async (c) => {
@@ -233,7 +336,11 @@ client.once('clientReady', async (c) => {
     console.error('Failed to clear global commands:', err);
   }
 
-  const commands = [apwhMcqCommand.toJSON(), examCancelCommand.toJSON()];
+  const commands = [
+    apwhMcqCommand.toJSON(),
+    apwhSaqCommand.toJSON(),
+    examCancelCommand.toJSON(),
+  ];
 
   for (const guild of c.guilds.cache.values()) {
     try {
@@ -271,65 +378,13 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (interaction.commandName === 'apwh-mcq') {
-    const guildId = interaction.guildId!;
+    await handleExamCommand(interaction, MCQ_CONFIG);
+    return;
+  }
 
-    if (activeSessions.has(guildId)) {
-      await interaction.reply({
-        content: '❌ An exam timer is already running! Use `/exam-cancel` to stop it first.',
-        ephemeral: true,
-      });
-      return;
-    }
-
-    const member = interaction.member as GuildMember;
-    const voiceChannel = member?.voice?.channel;
-
-    if (!voiceChannel) {
-      await interaction.reply({ content: '❌ You need to be in a voice channel first!', ephemeral: true });
-      return;
-    }
-
-    await interaction.deferReply();
-
-    let connection: VoiceConnection | null = null;
-
-    try {
-      connection = joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: guildId,
-        adapterCreator: interaction.guild!.voiceAdapterCreator,
-      });
-
-      connection.on('error', (err) => {
-        console.error('Voice connection error (non-fatal):', err.message);
-      });
-
-      await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
-
-      connection.on(VoiceConnectionStatus.Disconnected, () => {
-        endSession(guildId);
-      });
-
-      await interaction.editReply(`✅ Joined **${voiceChannel.name}** — starting your 55-minute APWH exam timer!`);
-      await runTimer(interaction, connection, 'APWH MCQ');
-
-    } catch (err) {
-      console.error('Voice connection failed, falling back to text-only mode:', (err as Error).message);
-
-      if (connection) {
-        try { connection.destroy(); } catch { /* ignore */ }
-        connection = null;
-      }
-
-      try {
-        await interaction.editReply(
-          `❌ Could not connect to **${voiceChannel.name}** for audio.\n` +
-          `Make sure the bot has **Connect** and **Speak** permissions in that channel.`,
-        );
-      } catch (e) {
-        console.error('Failed to send error reply:', e);
-      }
-    }
+  if (interaction.commandName === 'apwh-saq') {
+    await handleExamCommand(interaction, SAQ_CONFIG);
+    return;
   }
 });
 
