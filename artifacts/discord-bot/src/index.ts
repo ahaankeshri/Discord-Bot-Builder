@@ -178,11 +178,12 @@ async function sendWarning(
   channel: TextChannel,
   connection: VoiceConnection | null,
   warning: Warning,
+  endTimeUnix: number,
 ): Promise<void> {
   const embed = new EmbedBuilder()
     .setColor(warning.color)
     .setTitle('⏰ Exam Timer Warning')
-    .setDescription(`**${warning.label} remaining** on your exam!`)
+    .setDescription(`**${warning.label} remaining** on your exam!\n\n⏳ **Ends:** <t:${endTimeUnix}:R>`)
     .setTimestamp();
 
   await channel.send({ embeds: [embed] });
@@ -212,6 +213,7 @@ async function runTimer(
   const guildId = interaction.guildId!;
   const channel = interaction.channel as TextChannel;
   const endTime = Date.now() + config.durationMs;
+  const endTimeUnix = Math.floor(endTime / 1000);
   const totalMinutes = Math.round(config.durationMs / 60000);
   const warningsLeft = [...config.warnings].sort((a, b) => b.remainingMs - a.remainingMs);
 
@@ -225,7 +227,7 @@ async function runTimer(
     .setColor(0x5865f2)
     .setTitle(`📝 ${config.examName} Timer Started`)
     .setDescription(
-      `Your **${totalMinutes}-minute** exam timer has begun!\n\nYou will receive audio warnings at:\n${warningBullets}\n\nRun \`/exam-cancel\` to stop the timer early.`,
+      `Your **${totalMinutes}-minute** exam timer has begun!\n\n⏳ **Ends:** <t:${endTimeUnix}:R> (at <t:${endTimeUnix}:t>)\n\nYou will receive audio warnings at:\n${warningBullets}\n\nRun \`/exam-cancel\` to stop the timer early.`,
     )
     .setTimestamp();
 
@@ -263,7 +265,7 @@ async function runTimer(
     const nextWarning = warningsLeft[0];
     if (nextWarning && remaining <= nextWarning.remainingMs) {
       warningsLeft.shift();
-      await sendWarning(channel, connection, nextWarning);
+      await sendWarning(channel, connection, nextWarning, endTimeUnix);
     }
   }, 5000);
 
