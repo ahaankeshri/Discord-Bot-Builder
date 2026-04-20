@@ -78,6 +78,50 @@ const LAQ_CONFIG: ExamConfig = {
   ],
 };
 
+function formatDurationLabel(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (seconds === 0) return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+  return `${minutes} min ${seconds} sec`;
+}
+
+function formatDurationSpeech(totalMinutes: number): string {
+  if (totalMinutes < 60) return `${totalMinutes} minute timer starts now`;
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (mins === 0) return `${hours} hour timer starts now`;
+  return `${hours} hour ${mins} minute timer starts now`;
+}
+
+function buildAdminTimerConfig(totalMinutes: number): ExamConfig {
+  const durationMs = totalMinutes * 60 * 1000;
+  const halfMs = Math.floor(durationMs / 2);
+
+  const candidates: Warning[] = [
+    { remainingMs: halfMs,         label: formatDurationLabel(halfMs), color: 0x3b82f6, beepFreq: 550 },
+    { remainingMs: 5 * 60 * 1000,  label: '5 minutes',                 color: 0xf97316, beepFreq: 770 },
+    { remainingMs: 2 * 60 * 1000,  label: '2 minutes',                 color: 0xef4444, beepFreq: 880 },
+  ];
+
+  const seen = new Set<number>();
+  const warnings: Warning[] = [];
+
+  for (const w of candidates) {
+    if (w.remainingMs <= 0 || w.remainingMs >= durationMs) continue;
+    if (seen.has(w.remainingMs)) continue;
+    seen.add(w.remainingMs);
+    warnings.push(w);
+  }
+
+  return {
+    examName: `${totalMinutes}-Minute Timer`,
+    durationMs,
+    startMessage: formatDurationSpeech(totalMinutes),
+    warnings,
+  };
+}
+
 interface ActiveSession {
   interval: ReturnType<typeof setInterval>;
   connection: VoiceConnection | null;
@@ -104,6 +148,18 @@ const apwhSaqCommand = new SlashCommandBuilder()
 const apwhLaqCommand = new SlashCommandBuilder()
   .setName('apwh-laq')
   .setDescription('Start a 1hr 40min APWH LAQ exam timer with audio warnings at 60, 40, 20, 10, and 2 minutes');
+
+const adminTimerCommand = new SlashCommandBuilder()
+  .setName('admin-timer')
+  .setDescription('Start a custom timer with reminders at halfway, 5 minutes, and 2 minutes')
+  .addIntegerOption(option =>
+    option
+      .setName('minutes')
+      .setDescription('Total timer duration in minutes')
+      .setRequired(true)
+      .setMinValue(3)
+      .setMaxValue(600),
+  );
 
 const examCancelCommand = new SlashCommandBuilder()
   .setName('exam-cancel')
@@ -359,6 +415,7 @@ client.once('clientReady', async (c) => {
     apwhMcqCommand.toJSON(),
     apwhSaqCommand.toJSON(),
     apwhLaqCommand.toJSON(),
+    adminTimerCommand.toJSON(),
     examCancelCommand.toJSON(),
   ];
 
@@ -409,6 +466,13 @@ client.on('interactionCreate', async (interaction) => {
 
   if (interaction.commandName === 'apwh-laq') {
     await handleExamCommand(interaction, LAQ_CONFIG);
+    return;
+  }
+
+  if (interaction.commandName === 'admin-timer') {
+    const minutes = interaction.options.getInteger('minutes', true);
+    const config = buildAdminTimerConfig(minutes);
+    await handleExamCommand(interaction, config);
     return;
   }
 });
