@@ -115,7 +115,7 @@ function buildAdminTimerConfig(totalMinutes: number): ExamConfig {
   }
 
   return {
-    examName: `${totalMinutes}-Minute Timer`,
+    examName: 'Custom',
     durationMs,
     startMessage: formatDurationSpeech(totalMinutes),
     warnings,
