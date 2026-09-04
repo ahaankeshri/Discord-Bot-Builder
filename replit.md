@@ -29,7 +29,7 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 ## Discord Bot (`artifacts/discord-bot`)
 
-A Discord bot with a `/apwh-exam` slash command that:
+A Discord bot with APUSH exam timer slash commands that:
 - Joins the user's current voice channel
 - Starts a 55-minute exam timer
 - Plays audio beep warnings at 20, 10, and 5 minutes remaining

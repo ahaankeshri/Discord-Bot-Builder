@@ -44,7 +44,7 @@ interface ExamConfig {
 }
 
 const MCQ_CONFIG: ExamConfig = {
-  examName: 'APWH MCQ',
+  examName: 'APUSH MCQ',
   durationMs: 55 * 60 * 1000,
   startMessage: '55 minute timer starts now',
   warnings: [
@@ -55,7 +55,7 @@ const MCQ_CONFIG: ExamConfig = {
 };
 
 const SAQ_CONFIG: ExamConfig = {
-  examName: 'APWH SAQ',
+  examName: 'APUSH SAQ',
   durationMs: 40 * 60 * 1000,
   startMessage: '40 minute timer starts now',
   warnings: [
@@ -66,7 +66,7 @@ const SAQ_CONFIG: ExamConfig = {
 };
 
 const LAQ_CONFIG: ExamConfig = {
-  examName: 'APWH LAQ',
+  examName: 'APUSH LAQ',
   durationMs: 100 * 60 * 1000,
   startMessage: '1 hour 40 minute timer starts now',
   warnings: [
@@ -137,17 +137,17 @@ const client = new Client({
   ],
 });
 
-const apwhMcqCommand = new SlashCommandBuilder()
-  .setName('apwh-mcq')
-  .setDescription('Start a 55-minute APWH MCQ exam timer with audio warnings at 20, 10, and 5 minutes');
+const apushMcqCommand = new SlashCommandBuilder()
+  .setName('apush-mcq')
+  .setDescription('Start a 55-minute APUSH MCQ exam timer with audio warnings at 20, 10, and 5 minutes');
 
-const apwhSaqCommand = new SlashCommandBuilder()
-  .setName('apwh-saq')
-  .setDescription('Start a 40-minute APWH SAQ exam timer with audio warnings at 20, 10, and 2 minutes');
+const apushSaqCommand = new SlashCommandBuilder()
+  .setName('apush-saq')
+  .setDescription('Start a 40-minute APUSH SAQ exam timer with audio warnings at 20, 10, and 2 minutes');
 
-const apwhLaqCommand = new SlashCommandBuilder()
-  .setName('apwh-laq')
-  .setDescription('Start a 1hr 40min APWH LAQ exam timer with audio warnings at 60, 40, 20, 10, and 2 minutes');
+const apushLaqCommand = new SlashCommandBuilder()
+  .setName('apush-laq')
+  .setDescription('Start a 1hr 40min APUSH LAQ exam timer with audio warnings at 60, 40, 20, 10, and 2 minutes');
 
 const adminTimerCommand = new SlashCommandBuilder()
   .setName('admin-timer')
@@ -399,7 +399,7 @@ async function handleExamCommand(
 client.once('clientReady', async (c) => {
   console.log(`Logged in as ${c.user.tag}`);
   console.log(`Bot is in ${c.guilds.cache.size} server(s)`);
-  c.user.setActivity('APWH Exam Timer', { type: ActivityType.Watching });
+  c.user.setActivity('APUSH Exam Timer', { type: ActivityType.Watching });
 
   const rest = new REST({ version: '10' }).setToken(token!);
   const appId = c.application.id;
@@ -412,9 +412,9 @@ client.once('clientReady', async (c) => {
   }
 
   const commands = [
-    apwhMcqCommand.toJSON(),
-    apwhSaqCommand.toJSON(),
-    apwhLaqCommand.toJSON(),
+    apushMcqCommand.toJSON(),
+    apushSaqCommand.toJSON(),
+    apushLaqCommand.toJSON(),
     adminTimerCommand.toJSON(),
     examCancelCommand.toJSON(),
   ];
@@ -454,17 +454,17 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  if (interaction.commandName === 'apwh-mcq') {
+  if (interaction.commandName === 'apush-mcq') {
     await handleExamCommand(interaction, MCQ_CONFIG);
     return;
   }
 
-  if (interaction.commandName === 'apwh-saq') {
+  if (interaction.commandName === 'apush-saq') {
     await handleExamCommand(interaction, SAQ_CONFIG);
     return;
   }
 
-  if (interaction.commandName === 'apwh-laq') {
+  if (interaction.commandName === 'apush-laq') {
     await handleExamCommand(interaction, LAQ_CONFIG);
     return;
   }
